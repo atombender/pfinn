@@ -30,19 +30,8 @@ webApp =
     handleIndex :: ServerPart Response
     handleIndex =
       do
-        items <- liftIO getItems
         ok $ standardTemplate "Pfinn" $ do
           H.ul ! A.id "items" $ ""
-      where
-        getItems =
-          do
-            store <- openStore "fant.db"
-            items <- findItems store FindOptions {
-              findOptionsOffset = 0,
-              findOptionsLimit = 5,
-              findOptionsBeforeId = Nothing}
-            closeStore store
-            return items
 
     handleItems :: ServerPart Response
     handleItems =
@@ -63,7 +52,7 @@ webApp =
       where
         getItemsBefore mBeforeId =
           do
-            store <- openStore "fant.db"
+            store <- openDefaultStore
             items <- findItems store options
             closeStore store
             return items
@@ -75,7 +64,7 @@ webApp =
               where
                 baseOptions = FindOptions {
                   findOptionsOffset = 0,
-                  findOptionsLimit = 5,
+                  findOptionsLimit = 20,
                   findOptionsBeforeId = Nothing
                 }
 
@@ -90,7 +79,7 @@ webApp =
         doMarkRead :: String -> IO ()
         doMarkRead id =
           do
-            store <- openStore "fant.db"
+            store <- openDefaultStore
             markRead store (read id)
             closeStore store
             return ()

@@ -16,23 +16,30 @@ import Data.Encoding.ISO88591
 import Data.Encoding.UTF8
 import Text.Regex.Posix
 import Database.HDBC
-import Database.HDBC.Sqlite3 hiding (Connection)
-import qualified Database.HDBC.Sqlite3 as Sqlite3 (Connection)
+import Database.HDBC.PostgreSQL hiding (Connection)
+import qualified Database.HDBC.PostgreSQL as PostgreSQL (Connection)
 
 import FinnTypes
 
-data Store = Store {storeConn :: IO Sqlite3.Connection}
+data Store = Store {storeConn :: IO PostgreSQL.Connection}
 
 data FindOptions = FindOptions {findOptionsOffset :: Integer,
                                 findOptionsLimit :: Integer,
                                 findOptionsBeforeId :: Maybe Integer}
 
-openStore :: FilePath -> IO Store
-openStore path =
+openDefaultStore :: IO Store
+openDefaultStore =
   do
-    db <- connectSqlite3 path
+    params <- readFile "database.conf"
+    store <- openStore params
+    return store
+
+openStore :: String -> IO Store
+openStore connectionParams =
+  do
+    db <- connectPostgreSQL connectionParams
     setupSchema db
-    return Store{storeConn = return db}
+    return Store {storeConn = return db}
   where
     setupSchema :: IConnection conn => conn -> IO ()
     setupSchema db =
@@ -59,7 +66,7 @@ openStore path =
              return ()
         when (not ("read_states" `elem` tables)) $
           do run db "create table read_states (\
-                     \finn_kode integer not null references items (finn_kode), \
+                     \finn_kode integer primary key references items (finn_kode), \
                      \read_at timestamp not null)" []
              return ()
         commit db
@@ -87,11 +94,22 @@ markRead store finnKode =
   do
     db <- storeConn store
     now <- getCurrentTime
-    run db "insert or ignore into read_states (\
-      \finn_kode, read_at) values (?, ?)" (map toSql [
-      finnKode,
-      formatTime defaultTimeLocale "%s" now])
-    return ()
+    res <- quickQuery' db
+           "select read_at from read_states where finn_kode = ? limit 1"
+           [toSql finnKode]
+    case res of
+      [row] -> do
+        run db "update read_states set read_at = ? \
+          \where finn_kode = ?" [
+          toSql $ formatPgTimestamp now,
+          toSql finnKode]
+        return ()
+      [] -> do
+        run db "insert into read_states (\
+          \finn_kode, read_at) values (?, ?)" [
+          toSql finnKode,
+          toSql $ formatPgTimestamp now]
+        return ()
 
 findItems :: Store -> FindOptions -> IO [FinnItem]
 findItems store options =
@@ -171,9 +189,9 @@ saveItem store item =
             itemTitle item,
             itemUrl item,
             itemFinnKode item,
-            formatTime defaultTimeLocale "%s" (itemPublishedAt item),
-            formatTime defaultTimeLocale "%s" (itemCreatedAt item),
-            formatTime defaultTimeLocale "%s" (itemUpdatedAt item),
+            formatPgTimestamp (itemPublishedAt item),
+            formatPgTimestamp (itemCreatedAt item),
+            formatPgTimestamp (itemUpdatedAt item),
             itemLocation item,
             itemPrice item])
         return ()
@@ -211,8 +229,8 @@ saveItem store item =
               \values (?, ?, ?, ?, ?)"
               (map toSql [
                 itemFinnKode item,
-                formatTime defaultTimeLocale "%s" (imageCreatedAt image),
-                formatTime defaultTimeLocale "%s" (imageUpdatedAt image),
+                formatPgTimestamp (imageCreatedAt image),
+                formatPgTimestamp (imageUpdatedAt image),
                 imageNormalSizeUrl image,
                 imageLargeSizeUrl image])
             return ()
@@ -227,9 +245,9 @@ saveItem store item =
           (map toSql [
             itemTitle item,
             itemUrl item,
-            formatTime defaultTimeLocale "%s" (itemPublishedAt item),
-            formatTime defaultTimeLocale "%s" (itemCreatedAt item),
-            formatTime defaultTimeLocale "%s" (itemUpdatedAt item),
+            formatPgTimestamp (itemPublishedAt item),
+            formatPgTimestamp (itemCreatedAt item),
+            formatPgTimestamp (itemUpdatedAt item),
             itemLocation item,
             itemPrice item,
             itemFinnKode item])
@@ -244,9 +262,9 @@ itemFromRow [finnKode, title, url, publishedAt, createdAt, updatedAt, location, 
     itemFinnKode = fromSql finnKode,
     itemTitle = fromSql title,
     itemUrl = fromSql url,
-    itemPublishedAt = parseTimestamp $ fromSql publishedAt,
-    itemCreatedAt = parseTimestamp $ fromSql createdAt,
-    itemUpdatedAt = parseTimestamp $ fromSql updatedAt,
+    itemPublishedAt = parsePgTimestamp $ fromSql publishedAt,
+    itemCreatedAt = parsePgTimestamp $ fromSql createdAt,
+    itemUpdatedAt = parsePgTimestamp $ fromSql updatedAt,
     itemLocation = fromSql location,
     itemPrice = fromSql price,
     itemImages = []
@@ -256,11 +274,14 @@ imageFromRow :: [SqlValue] -> FinnImage
 imageFromRow [finnKode, createdAt, updatedAt, normalUrl, largeUrl] =
   FinnImage {
     imageFinnKode = fromSql finnKode,
-    imageCreatedAt = parseTimestamp $ fromSql createdAt,
-    imageUpdatedAt = parseTimestamp $ fromSql updatedAt,
+    imageCreatedAt = parsePgTimestamp $ fromSql createdAt,
+    imageUpdatedAt = parsePgTimestamp $ fromSql updatedAt,
     imageNormalSizeUrl = fromSql normalUrl,
     imageLargeSizeUrl = fromSql largeUrl
   }
 
-parseTimestamp :: String -> UTCTime
-parseTimestamp s = readTime defaultTimeLocale "%s" s :: UTCTime
+parsePgTimestamp :: String -> UTCTime
+parsePgTimestamp s = readTime defaultTimeLocale "%s" s :: UTCTime
+
+formatPgTimestamp :: UTCTime -> String
+formatPgTimestamp t = formatTime defaultTimeLocale "%F %T" t

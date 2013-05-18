@@ -17,8 +17,8 @@ main =
     scrapeUrl url =
       do
         putStrLn url
-        cache <- openPageCache "fant_cache.db"
-        store <- openStore "fant.db"
+        cache <- openPageCache
+        store <- openDefaultStore
         feed <- fetchResults cache url
         case feed of
           Left x -> putStrLn x

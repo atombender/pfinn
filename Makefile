@@ -10,11 +10,14 @@ SOURCES=$(wildcard *.hs)
 
 OBJECTS=$(patsubst %.hs,%.o,$(SOURCES))
 
+GHC_FLAGS=-Werror
+#GHC_FLAGS=-Werror -Wall
+
 WebUI: $(SOURCES) $(STYLESHEETS)
-	ghc WebUI.hs
+	ghc $(GHC_FLAGS) WebUI.hs
 
 Scraper: $(SOURCES)
-	ghc Scraper.hs
+	ghc $(GHC_FLAGS) Scraper.hs
 
 $(STYLESHEETS): $(SRC_STYLESHEETS)
 	sass assets/stylesheets/screen.sass $@

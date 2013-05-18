@@ -6,3 +6,4 @@ trash/
 *.db
 Scraper
 WebUI
+*.conf

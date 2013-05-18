@@ -3,55 +3,53 @@ module PageCache where
 import Control.Monad (when)
 import Network.URI
 import Network.HTTP
-import Network.HTTP.Base
 import Data.Maybe
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 (unpack)
 import Data.Text (pack, unpack)
 import Data.Time
-import Data.Time.Format
 import Data.Time.RFC2822
-import Data.Encoding
-import Data.Encoding.ISO88591
-import Data.Encoding.UTF8
 import System.Locale
 import Text.Regex.Posix
 import Database.HDBC
-import Database.HDBC.Sqlite3 hiding (Connection)
-import qualified Database.HDBC.Sqlite3 as Sqlite3 (Connection)
+import Database.HDBC.PostgreSQL hiding (Connection)
+import qualified Database.HDBC.PostgreSQL as PostgreSQL (Connection)
 
 data CachedPage = CachedPage {cachedPageUrl :: String,
                               cachedPageBody :: String,
                               cachedPageLastModifiedAt :: Maybe UTCTime}
   deriving (Eq, Show, Read)
 
-data PageCache = PageCache {pageCacheConn :: IO Sqlite3.Connection}
+data PageCache = PageCache {pageCacheConn :: IO PostgreSQL.Connection}
 
 data FetchedPage = FetchedPage {fetchedPageBody :: String,
                                 fetchedPageLastModifiedAt :: Maybe UTCTime}
 
-openPageCache :: FilePath -> IO PageCache
-openPageCache path =
-  do dbh <- connectSqlite3 path
-     prepDB dbh
-     return PageCache{pageCacheConn = return dbh}
+openPageCache :: IO PageCache
+openPageCache =
+  do
+    params <- readFile "database.conf"
+    db <- connectPostgreSQL params
+    setupSchema db
+    return PageCache{pageCacheConn = return db}
   where
-    prepDB :: IConnection conn => conn -> IO ()
-    prepDB dbh =
-      do tables <- getTables dbh
+    setupSchema :: IConnection conn => conn -> IO ()
+    setupSchema db =
+      do tables <- getTables db
          when (not ("cached_pages" `elem` tables)) $
-             do run dbh "create table cached_pages ( \
+           do
+             _ <- run db "create table cached_pages ( \
                          \url text primary key, \
                          \body text not null, \
-                         \last_modified_at timestamp not null)" []
-                return ()
-         commit dbh
+                         \last_modified_at timestamp)" []
+             return ()
+         commit db
 
 closePageCache :: PageCache -> IO ()
 closePageCache cache =
-  do dbh <- pageCacheConn cache
-     commit dbh
-     disconnect dbh
+  do db <- pageCacheConn cache
+     commit db
+     disconnect db
 
 fetchUrlWithCaching :: PageCache -> URI -> IO (Either String CachedPage)
 fetchUrlWithCaching cache uri =
@@ -64,13 +62,13 @@ fetchUrlWithCaching cache uri =
         case body of
           Left x -> return $ Left ("Error connecting: " ++ show x)
           Right fetched -> do
-            cached <- putCachedPage cache cached
-            return $ Right cached
+            page <- putCachedPage cache cachedPage
+            return $ Right page
             where
-              cached = CachedPage {cachedPageUrl = url,
+              cachedPage = CachedPage {cachedPageUrl = url,
                                    cachedPageBody = fetchedPageBody fetched,
                                    cachedPageLastModifiedAt = fetchedPageLastModifiedAt fetched}
-      Just cached -> return $ Right cached
+      Just c -> return $ Right c
   where
     url = show uri
 
@@ -89,8 +87,8 @@ fetchUrl url =
                                   fetchedPageLastModifiedAt = lastModifiedHeader response}
 
            lastModifiedHeader :: Response ByteString -> Maybe UTCTime
-           lastModifiedHeader response =
-             case (lookupHeader HdrLastModified (rspHeaders response)) of
+           lastModifiedHeader rs =
+             case (lookupHeader HdrLastModified (rspHeaders rs)) of
                Just s ->
                  case (readRFC2822 s) of
                    Just z -> Just $ zonedTimeToUTC z
@@ -98,21 +96,21 @@ fetchUrl url =
                Nothing -> Nothing
 
            contentTypeHeader :: Response ByteString -> String
-           contentTypeHeader response =
-             case (lookupHeader HdrContentType (rspHeaders response)) of
+           contentTypeHeader rs =
+             case (lookupHeader HdrContentType (rspHeaders rs)) of
                Just s -> s
                Nothing -> "application/octet-stream"
 
            charsetFromContentType :: String -> String
-           charsetFromContentType contentType
-             | hasCharset contentType = charset
+           charsetFromContentType ctype
+             | hasCharset ctype = cset
              | otherwise = "utf-8"
              where
-               [[_, charset]] = contentType =~ "charset=([^ ]+)"
+               [[_, cset]] = ctype =~ "charset=([^ ]+)"
                hasCharset s = s =~ "charset=([^ ]+)" :: Bool
 
            decodeFromCharset :: String -> ByteString -> String
-           decodeFromCharset charset bytes = Data.Text.unpack (reencode bytes)
+           decodeFromCharset _ bytes = Data.Text.unpack (reencode bytes)
              -- FIXME: Make work for other than iso-8859-1
              where
                reencode = Data.Text.pack . Data.ByteString.Char8.unpack
@@ -130,9 +128,7 @@ fetchUrlRaw url =
            (3, _, _) ->
              case findHeader HdrLocation r of
                Nothing -> return $ Left (show r)
-               Just url ->
-                 let uri = fromJust $ parseURI url
-                 in fetchUrlRaw uri
+               Just u -> fetchUrlRaw (fromJust $ parseURI u)
            _ -> return $ Left (show r)
   where request = Request {rqURI = url,
                            rqMethod = GET,
@@ -142,36 +138,43 @@ fetchUrlRaw url =
 getCachedPage :: PageCache -> String -> IO (Maybe CachedPage)
 getCachedPage cache url =
   do
-    dbh <- pageCacheConn cache
-    res <- quickQuery' dbh
-           "select url, body, last_modified_at from cached_pages where url = ? limit 1"
+    db <- pageCacheConn cache
+    res <- quickQuery' db
+           "select body, last_modified_at from cached_pages where url = ? limit 1"
            [toSql url]
     case res of
-      [[url, body, lastModifiedAt]] -> do
-        putStrLn ("Cache hit " ++ fromSql url)
+      [[body, lastModifiedAt]] -> do
+        putStrLn ("Cache hit " ++ url)
         return (Just CachedPage {
-          cachedPageUrl = fromSql url,
+          cachedPageUrl = url,
           cachedPageBody = fromSql body,
           cachedPageLastModifiedAt = fromSql lastModifiedAt
         })
       [] -> do
         putStrLn ("Cache miss " ++ url)
         return Nothing
-      x -> fail $ "Unexpected rows"
+      _ -> fail $ "Unexpected rows"
 
 putCachedPage :: PageCache -> CachedPage -> IO CachedPage
 putCachedPage cache page =
   do
-    dbh <- pageCacheConn cache
-    run dbh "insert or ignore into cached_pages (\
-      \url, body, last_modified_at) values (?, ?, ?)" (map toSql [
-      cachedPageUrl page,
-      cachedPageBody page,
-      timeAsString (cachedPageLastModifiedAt page)])
-    commit dbh
+    db <- pageCacheConn cache
+    _ <- run db "insert into cached_pages (\
+                \url, body, last_modified_at) values (?, ?, ?)"
+         [toSql $ cachedPageUrl page,
+         toSql $ cachedPageBody page,
+         maybeFormatPgTimestamp (cachedPageLastModifiedAt page)]
+    commit db
     return page
-  where
-    timeAsString t =
-      case t of
-        Just t' -> formatTime defaultTimeLocale "%s" t'
-        Nothing -> ""
+
+parsePgTimestamp :: String -> UTCTime
+parsePgTimestamp s = readTime defaultTimeLocale "%s" s :: UTCTime
+
+formatPgTimestamp :: UTCTime -> String
+formatPgTimestamp t = formatTime defaultTimeLocale "%F %T" t
+
+maybeFormatPgTimestamp :: Maybe UTCTime -> SqlValue
+maybeFormatPgTimestamp t =
+  case t of
+    Just t' -> toSql (formatTime defaultTimeLocale "%s" t')
+    Nothing -> SqlNull

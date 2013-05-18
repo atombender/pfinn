@@ -1,8 +1,6 @@
 module FinnTypes where
 
-import Network.URI
-import Data.Maybe
-import Data.Time
+import Data.Time (UTCTime)
 
 type FinnKode = String
 
