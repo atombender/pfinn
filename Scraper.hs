@@ -11,31 +11,30 @@ import Storage
 main =
   do
     args <- getArgs
-    mapM_ scrapeUrl args
+    cache <- openPageCache
+    store <- openDefaultStore
+    mapM_ (scrapeUrl cache store) args
+    closePageCache cache
+    closeStore store
     exitSuccess
   where
-    scrapeUrl :: String -> IO ()
-    scrapeUrl url = scrapeUrlOnPage url 1
+    scrapeUrl :: PageCache -> Store -> String -> IO ()
+    scrapeUrl cache store url = scrapeUrlOnPage cache store url 1
 
-    scrapeUrlOnPage :: String -> Integer -> IO ()
-    scrapeUrlOnPage url pageNumber
-      | pageNumber < 10 = (
-        do putStrLn ("Scraping " ++ urlWithPage)
-           cache <- openPageCache
-           store <- openDefaultStore
-           feed <- scrapeResults cache urlWithPage
-           case feed of
-             Left x -> putStrLn x
-             Right result -> do
-               saved <- liftIO $ mapM (saveItem store) (resultItems result)
-               case or saved of
-                 True -> scrapeUrlOnPage url (pageNumber + 1)
-                 False -> return ()
-           closePageCache cache
-           closeStore store
-      )
+    scrapeUrlOnPage :: PageCache -> Store -> String -> Integer -> IO ()
+    scrapeUrlOnPage cache store url pageNumber
+      | pageNumber < 10 = do
+          putStrLn ("Scraping " ++ urlWithPageNumber)
+          feed <- scrapeResults cache urlWithPageNumber
+          case feed of
+            Left x -> putStrLn x
+            Right result -> do
+              saved <- liftIO $ mapM (saveItem store) (resultItems result)
+              case (or saved) of
+                True -> scrapeUrlOnPage cache store url (pageNumber + 1)
+                False -> return ()
       | otherwise = return ()
       where
-        urlWithPage
+        urlWithPageNumber
           | pageNumber > 1 = url ++ "&page=" ++ (show pageNumber)
           | otherwise = url

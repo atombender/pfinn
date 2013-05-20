@@ -101,9 +101,8 @@ scrapeItem cache item =
 
     parseItemPage :: FinnItem -> URI -> String -> IO FinnItem
     parseItemPage item uri body
-      | isDeleted body = do return item
-      | otherwise =
-        do
+      | isDeleted body = return item
+      | otherwise = do
           let doc = readString [withParseHTML yes, withWarnings no] body
           now <- getCurrentTime
           [item'] <- runX $ doc >>> (parsePage now item)

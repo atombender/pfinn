@@ -6,6 +6,8 @@ STYLESHEETS=assets/stylesheets/screen.css
 
 SRC_STYLESHEETS=$(wildcard assets/stylesheets/screen/*.sass)
 
+OUTPUT_STYLESHEETS=$(patsubst %.sass,%.css,$(SRC_STYLESHEETS)) $(STYLESHEETS)
+
 SOURCES=$(wildcard *.hs)
 
 OBJECTS=$(patsubst %.hs,%.o,$(SOURCES))
@@ -23,7 +25,7 @@ $(STYLESHEETS): $(SRC_STYLESHEETS)
 	sass assets/stylesheets/screen.sass $@
 
 clean:
-	rm -f *.o WebUI Scraper
+	rm -f $(OBJECTS) *.ld_* WebUI Scraper $(OUTPUT_STYLESHEETS)
 
 %.o : %.hs
 	ghc $<
