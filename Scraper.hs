@@ -29,9 +29,7 @@ main =
              Right result -> do
                saved <- liftIO $ mapM (saveItem store) (resultItems result)
                case or saved of
-                 True -> do
-                   scrapeUrlOnPage url (pageNumber + 1)
-                   return ()
+                 True -> scrapeUrlOnPage url (pageNumber + 1)
                  False -> return ()
            closePageCache cache
            closeStore store

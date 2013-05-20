@@ -155,7 +155,6 @@ getItemByFinnKode store finnKode =
         let item' = item {itemImages = images}
         return $ Just item'
       [] -> do
-        putStrLn ("Store miss " ++ finnKode)
         return Nothing
       x -> fail $ "Unexpected rows"
   where
@@ -192,7 +191,6 @@ saveItem store item =
     createItem :: Store -> FinnItem -> IO ()
     createItem store item =
       do
-        putStrLn ("Creating item finnkode " ++ (itemFinnKode item))
         db <- storeConn store
         run db "insert into items (\
           \title, url, finn_kode, published_at, created_at, updated_at, \
@@ -237,7 +235,6 @@ saveItem store item =
         createItemImage :: Store -> FinnItem -> FinnImage -> IO ()
         createItemImage store item image =
           do
-            putStrLn "Creating an image"
             db <- storeConn store
             run db "insert into images (\
               \finn_kode, created_at, updated_at, normal_url, large_url) \

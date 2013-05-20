@@ -88,7 +88,6 @@ scrapeResultPage uri body =
 scrapeItem :: PageCache -> FinnItem -> IO FinnItem
 scrapeItem cache item =
   do
-    putStrLn ("Fetching item page " ++ (show uri))
     resp <- fetchUrlWithCaching cache uri
     case resp of
       Left x ->
@@ -105,11 +104,9 @@ scrapeItem cache item =
       | isDeleted body = do return item
       | otherwise =
         do
-          putStrLn ("Item page " ++ (show uri))
           let doc = readString [withParseHTML yes, withWarnings no] body
           now <- getCurrentTime
           [item'] <- runX $ doc >>> (parsePage now item)
-          putStrLn (show item')
           return item'
       where
         isDeleted body = "Annonsen er slettet" `isInfixOf` body
