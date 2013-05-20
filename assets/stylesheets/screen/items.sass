@@ -14,11 +14,13 @@ ul#items
       vertical-align: top
       width: 200px
       padding: 10px 10px 0 0
+      font-size: 12px
       .title
         font-weight: bold
-      .location
+        font-size: 14px
+        margin: 0 0 5px 0
+      .location, .seller, .address
         color: #666
-        font-size: 12px
     .images
       display: table-cell
       border-left: solid 1px #ddd
@@ -31,5 +33,5 @@ ul#items
     &:hover
       background: #f0f0f0
     &.is_read
-      .title
-        color: #666
+      .title a:link
+        color: #888 !important

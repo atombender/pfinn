@@ -43,10 +43,19 @@ webApp =
             do
               H.li ! dataAttribute "id" (toValue $ itemFinnKode item) $ do
                 H.div ! class_ "meta" $ do
-                  ((H.div ! class_ "title") . toHtml . itemTitle) item
-                  ((H.div ! class_ "location") . toHtml . itemLocation) item
+                  H.div ! class_ "title" $ do
+                    H.a ! href (toValue (itemUrl item)) $ toHtml (itemTitle item)
+                  H.div ! class_ "price" $
+                    toHtml $ (itemPrice item ++ " kr")
+                  H.div ! class_ "location" $
+                    toHtml $ itemLocation item
+                  H.div ! class_ "address" $
+                    toHtml $ itemAddress item
+                  H.div ! class_ "seller" $
+                    toHtml $ itemSellerName item
                 (H.div ! class_ "images" $ mapM_ (\image -> do
-                  H.img ! src (toValue (imageNormalSizeUrl image))
+                  H.a ! href (toValue (imageLargeSizeUrl image)) $ do
+                    H.img ! src (toValue (imageNormalSizeUrl image))
                   H.span " ") (itemImages item))
             ) items
       where

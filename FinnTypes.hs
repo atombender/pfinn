@@ -19,7 +19,9 @@ data FinnItem = FinnItem {itemFinnKode :: FinnKode,
                           itemUpdatedAt :: UTCTime,
                           itemLocation :: String,
                           itemPrice :: String,
-                          itemImages :: [FinnImage]}
+                          itemImages :: [FinnImage],
+                          itemAddress :: String,
+                          itemSellerName :: String}
   deriving (Eq, Show, Read)
 
 data FinnResult = FinnResult {resultUrl :: String,

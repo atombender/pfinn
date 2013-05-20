@@ -86,54 +86,55 @@ fetchUrl url =
            fetched = FetchedPage {fetchedPageBody = body,
                                   fetchedPageLastModifiedAt = lastModifiedHeader response}
 
-           lastModifiedHeader :: Response ByteString -> Maybe UTCTime
-           lastModifiedHeader rs =
-             case (lookupHeader HdrLastModified (rspHeaders rs)) of
-               Just s ->
-                 case (readRFC2822 s) of
-                   Just z -> Just $ zonedTimeToUTC z
-                   Nothing -> Nothing
-               Nothing -> Nothing
+  where
+    lastModifiedHeader :: Response ByteString -> Maybe UTCTime
+    lastModifiedHeader rs =
+      case (lookupHeader HdrLastModified (rspHeaders rs)) of
+        Just s ->
+          case (readRFC2822 s) of
+            Just z -> Just $ zonedTimeToUTC z
+            Nothing -> Nothing
+        Nothing -> Nothing
 
-           contentTypeHeader :: Response ByteString -> String
-           contentTypeHeader rs =
-             case (lookupHeader HdrContentType (rspHeaders rs)) of
-               Just s -> s
-               Nothing -> "application/octet-stream"
+    contentTypeHeader :: Response ByteString -> String
+    contentTypeHeader rs =
+      case (lookupHeader HdrContentType (rspHeaders rs)) of
+        Just s -> s
+        Nothing -> "application/octet-stream"
 
-           charsetFromContentType :: String -> String
-           charsetFromContentType ctype
-             | hasCharset ctype = cset
-             | otherwise = "utf-8"
-             where
-               [[_, cset]] = ctype =~ "charset=([^ ]+)"
-               hasCharset s = s =~ "charset=([^ ]+)" :: Bool
+    charsetFromContentType :: String -> String
+    charsetFromContentType ctype
+      | hasCharset ctype = cset
+      | otherwise = "utf-8"
+      where
+        [[_, cset]] = ctype =~ "charset=([^ ]+)"
+        hasCharset s = s =~ "charset=([^ ]+)" :: Bool
 
-           decodeFromCharset :: String -> ByteString -> String
-           decodeFromCharset _ bytes = Data.Text.unpack (reencode bytes)
-             -- FIXME: Make work for other than iso-8859-1
-             where
-               reencode = Data.Text.pack . Data.ByteString.Char8.unpack
+    decodeFromCharset :: String -> ByteString -> String
+    decodeFromCharset _ bytes = Data.Text.unpack (reencode bytes)
+      -- FIXME: Make work for other than iso-8859-1
+      where
+        reencode = Data.Text.pack . Data.ByteString.Char8.unpack
 
-fetchUrlRaw :: URI -> IO (Either String (Response ByteString))
-fetchUrlRaw url =
-  do resp <- simpleHTTP request
-     case resp of
-       -- TODO: Return real error type
-       Left x -> return $ Left ("Error connecting: " ++ show x)
-       Right r ->
-         case rspCode r of
-           (2, _, _) ->
-             return $ Right r
-           (3, _, _) ->
-             case findHeader HdrLocation r of
-               Nothing -> return $ Left (show r)
-               Just u -> fetchUrlRaw (fromJust $ parseURI u)
-           _ -> return $ Left (show r)
-  where request = Request {rqURI = url,
-                           rqMethod = GET,
-                           rqHeaders = [],
-                           rqBody = (empty :: ByteString)}
+    fetchUrlRaw :: URI -> IO (Either String (Response ByteString))
+    fetchUrlRaw url =
+      do resp <- simpleHTTP request
+         case resp of
+           -- TODO: Return real error type
+           Left x -> return $ Left ("Error connecting: " ++ show x)
+           Right r ->
+             case rspCode r of
+               (2, _, _) ->
+                 return $ Right r
+               (3, _, _) ->
+                 case findHeader HdrLocation r of
+                   Nothing -> return $ Left (show r)
+                   Just u -> fetchUrlRaw (fromJust $ parseURI u)
+               _ -> return $ Left (show r)
+      where request = Request {rqURI = url,
+                               rqMethod = GET,
+                               rqHeaders = [],
+                               rqBody = (empty :: ByteString)}
 
 getCachedPage :: PageCache -> String -> IO (Maybe CachedPage)
 getCachedPage cache url =

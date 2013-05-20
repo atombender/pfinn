@@ -54,6 +54,8 @@ openStore connectionParams =
                      \created_at timestamp not null, \
                      \updated_at timestamp not null, \
                      \location text, \
+                     \address text, \
+                     \seller_name text, \
                      \price text)" []
              return ()
         when (not ("images" `elem` tables)) $
@@ -144,7 +146,7 @@ getItemByFinnKode store finnKode =
     db <- storeConn store
     res <- quickQuery' db
            "select finn_kode, title, url, published_at, created_at, \
-           \updated_at, location, price from items where finn_kode = ? limit 1"
+           \updated_at, location, address, seller_name, price from items where finn_kode = ? limit 1"
            [toSql finnKode]
     case res of
       [row] -> do
@@ -166,16 +168,26 @@ getItemByFinnKode store finnKode =
                [toSql finnKode]
         return $ (map imageFromRow res)
 
-saveItem :: Store -> FinnItem -> IO ()
+itemExists :: Store -> FinnKode -> IO Bool
+itemExists store finnKode =
+  do
+    mItem <- getItemByFinnKode store finnKode
+    case mItem of
+      Nothing -> return False
+      Just _ -> return True
+
+saveItem :: Store -> FinnItem -> IO Bool
 saveItem store item =
   do
-    maybeOldItem <- getItemByFinnKode store (itemFinnKode item)
-    case maybeOldItem of
+    mOldItem <- getItemByFinnKode store (itemFinnKode item)
+    case mOldItem of
       Nothing -> do
         createItem store item
         mapM_ (\image -> saveItemImage store item image) $ itemImages item
+        return True
       Just old -> do
         updateItem store (mergeItem old item)
+        return False
   where
     createItem :: Store -> FinnItem -> IO ()
     createItem store item =
@@ -184,7 +196,7 @@ saveItem store item =
         db <- storeConn store
         run db "insert into items (\
           \title, url, finn_kode, published_at, created_at, updated_at, \
-          \location, price) values (?, ?, ?, ?, ?, ?, ?, ?)"
+          \location, address, seller_name, price) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
           (map toSql [
             itemTitle item,
             itemUrl item,
@@ -193,16 +205,19 @@ saveItem store item =
             formatPgTimestamp (itemCreatedAt item),
             formatPgTimestamp (itemUpdatedAt item),
             itemLocation item,
+            itemAddress item,
+            itemSellerName item,
             itemPrice item])
         return ()
 
     saveItemImage :: Store -> FinnItem -> FinnImage -> IO ()
     saveItemImage store item image =
       do
-        maybeOldImage <- getMatchingImage store item image
-        case maybeOldImage of
+        mImage <- getMatchingImage store item image
+        case mImage of
           Nothing -> do
             createItemImage store item image
+          _ -> do return ()
       where
         getMatchingImage :: Store -> FinnItem -> FinnImage -> IO (Maybe FinnImage)
         getMatchingImage store item image =
@@ -240,8 +255,8 @@ saveItem store item =
       do
         db <- storeConn store
         run db "update items set title = ?, url = ?, published_at = ?, \
-          \created_at = ?, updated_at = ?, location = ?, price = ? \
-          \where finn_kode = ?"
+          \created_at = ?, updated_at = ?, location = ?, address = ?, seller_name = ?, \
+          \price = ? where finn_kode = ?"
           (map toSql [
             itemTitle item,
             itemUrl item,
@@ -249,6 +264,8 @@ saveItem store item =
             formatPgTimestamp (itemCreatedAt item),
             formatPgTimestamp (itemUpdatedAt item),
             itemLocation item,
+            itemAddress item,
+            itemSellerName item,
             itemPrice item,
             itemFinnKode item])
         return ()
@@ -257,7 +274,7 @@ saveItem store item =
     mergeItem old new = new
 
 itemFromRow :: [SqlValue] -> FinnItem
-itemFromRow [finnKode, title, url, publishedAt, createdAt, updatedAt, location, price] =
+itemFromRow [finnKode, title, url, publishedAt, createdAt, updatedAt, location, address, sellerName, price] =
   FinnItem {
     itemFinnKode = fromSql finnKode,
     itemTitle = fromSql title,
@@ -266,6 +283,8 @@ itemFromRow [finnKode, title, url, publishedAt, createdAt, updatedAt, location, 
     itemCreatedAt = parsePgTimestamp $ fromSql createdAt,
     itemUpdatedAt = parsePgTimestamp $ fromSql updatedAt,
     itemLocation = fromSql location,
+    itemAddress = fromSql address,
+    itemSellerName = fromSql sellerName,
     itemPrice = fromSql price,
     itemImages = []
   }

@@ -7,6 +7,7 @@ import Network.URI
 import System.IO
 import System.Locale
 import Data.Maybe
+import Data.List (isInfixOf)
 import Data.Time
 import Data.Time.Clock (getCurrentTime)
 import Text.XML.HXT.Core
@@ -16,8 +17,9 @@ import Text.Regex.Posix
 import FinnTypes
 import PageCache
 
-fetchResults :: PageCache -> String -> IO (Either String FinnResult)
-fetchResults cache url =
+-- Fetch a search result page and scrape it, returning result data.
+scrapeResults :: PageCache -> String -> IO (Either String FinnResult)
+scrapeResults cache url =
   do
     resp <- fetchUrlWithCaching cache uri
     case resp of
@@ -25,55 +27,23 @@ fetchResults cache url =
         return $ Left (show x)
       Right page ->
         do
-          items <- parseResultPage uri (cachedPageBody page)
-          items' <- mapM (parseImages cache) items
+          items <- scrapeResultPage uri (cachedPageBody page)
+          items' <- mapM (scrapeItem cache) items
           let result = FinnResult {resultUrl = url, resultItems = items'}
           return (Right result)
   where
     uri = fromJust $ parseURI url
 
-parseImages :: PageCache -> FinnItem -> IO FinnItem
-parseImages cache item =
-  do
-    putStrLn ("Fetching images in " ++ (show uri))
-    resp <- fetchUrlWithCaching cache uri
-    case resp of
-      Left x ->
-        return item
-      Right page ->
-        do
-          images <- parseImagePage item uri (cachedPageBody page)
-          return item {itemImages = images}
-  where
-    uri = fromJust $ parseURI ("http://www.finn.no/finn/torget/tilsalgs/viewimage?finnkode=" ++ (itemFinnKode item))
-
-parseImagePage :: FinnItem -> URI -> String -> IO [FinnImage]
-parseImagePage item uri body =
+-- Scrape items from a result page.
+scrapeResultPage :: URI -> String -> IO [FinnItem]
+scrapeResultPage uri body =
   do
     let doc = readString [withParseHTML yes, withWarnings no] body
     now <- getCurrentTime
-    returnA $ runX $ (doc >>> css "span.thumbinnerwrap img" >>>
-                      getAttrValue "src") >>. map (parseImageItem uri now)
+    returnA $ runX $ (doc >>> css "div.fright.objectinfo") >>> (parseResultDiv uri now)
   where
-    parseImageItem :: URI -> UTCTime -> String -> FinnImage
-    parseImageItem baseUrl time src =
-      FinnImage{imageFinnKode = itemFinnKode item,
-                imageCreatedAt = time,
-                imageUpdatedAt = time,
-                imageNormalSizeUrl = prefix ++ suffix,
-                imageLargeSizeUrl = prefix ++ "_xl" ++ suffix}
-      where
-        [[_, prefix, suffix]] = src =~ "^(.*)_thumb(\\..*)" :: [[String]]
-
-parseResultPage :: URI -> String -> IO [FinnItem]
-parseResultPage uri body =
-  do
-    let doc = readString [withParseHTML yes, withWarnings no] body
-    now <- getCurrentTime
-    returnA $ runX $ (doc >>> css "div.fright.objectinfo") >>> (parseResultItem uri now)
-  where
-    parseResultItem :: ArrowXml a => URI -> UTCTime -> a XmlTree FinnItem
-    parseResultItem baseUrl time =
+    parseResultDiv :: ArrowXml a => URI -> UTCTime -> a XmlTree FinnItem
+    parseResultDiv baseUrl time =
       proc node -> do
         anchor <- css "div h2 a" >>> getAttrValue "href" -< node
         anchorText <- css "div h2 a" >>> (deep getText) -< node
@@ -89,6 +59,8 @@ parseResultPage uri body =
           itemUpdatedAt = time,
           itemLocation = extractLocation locationInfo,
           itemPrice = extractPrice priceInfo,
+          itemAddress = "",
+          itemSellerName = "",
           itemImages = []
         }
       where
@@ -111,3 +83,56 @@ parseResultPage uri body =
         sanitized = filter (\e -> e >= '\x0020' && e <= '\x007f') text
 
     extractPrice text = filter (\e -> e >= '0' && e <= '9') text
+
+-- Scrape the item's main page, augmenting the item with more data.
+scrapeItem :: PageCache -> FinnItem -> IO FinnItem
+scrapeItem cache item =
+  do
+    putStrLn ("Fetching item page " ++ (show uri))
+    resp <- fetchUrlWithCaching cache uri
+    case resp of
+      Left x ->
+        return item
+      Right page ->
+        do
+          item' <- parseItemPage item uri (cachedPageBody page)
+          return item'
+  where
+    uri = fromJust $ parseURI ("http://www.finn.no/finn/torget/tilsalgs/annonse?finnkode=" ++ (itemFinnKode item))
+
+    parseItemPage :: FinnItem -> URI -> String -> IO FinnItem
+    parseItemPage item uri body
+      | isDeleted body = do return item
+      | otherwise =
+        do
+          putStrLn ("Item page " ++ (show uri))
+          let doc = readString [withParseHTML yes, withWarnings no] body
+          now <- getCurrentTime
+          [item'] <- runX $ doc >>> (parsePage now item)
+          putStrLn (show item')
+          return item'
+      where
+        isDeleted body = "Annonsen er slettet" `isInfixOf` body
+
+        parsePage :: (ArrowXml a) => UTCTime -> FinnItem -> a XmlTree FinnItem
+        parsePage now node =
+          do
+            proc node -> do
+              imageUrls <- listA (css "#thumbnails .thumbinnerwrap img" >>> getAttrValue "src") -< node
+              addressInfo <- (css "h3 figcaption a" >>> (deep getText)) -< node
+              sellerInfo <- (css "#inlineEmail h2, h2#partnername" >>> (deep getText)) -< node
+              returnA -< item {
+                itemImages = map (parseImage now) imageUrls,
+                itemAddress = addressInfo,
+                itemSellerName = sellerInfo
+              }
+
+        parseImage :: UTCTime -> String -> FinnImage
+        parseImage time src =
+          FinnImage{imageFinnKode = itemFinnKode item,
+                    imageCreatedAt = time,
+                    imageUpdatedAt = time,
+                    imageNormalSizeUrl = prefix ++ suffix,
+                    imageLargeSizeUrl = prefix ++ "_xl" ++ suffix}
+          where
+            [[_, prefix, suffix]] = src =~ "^(.*)_thumb(\\..*)" :: [[String]]
