@@ -176,9 +176,7 @@ getCachedPage cache url =
           cachedPageBody = fromSql body,
           cachedPageLastModifiedAt = fromSql lastModifiedAt
         })
-      [] -> do
-        putStrLn ("Cache miss " ++ url)
-        return Nothing
+      [] -> return Nothing
       _ -> fail $ "Unexpected rows"
 
 putCachedPage :: PageCache -> CachedPage -> IO CachedPage
