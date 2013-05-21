@@ -114,9 +114,14 @@ scrapeItem cache item =
         parsePage now node =
           do
             proc node -> do
-              imageUrls <- listA (css "#thumbnails .thumbinnerwrap img" >>> getAttrValue "src") -< node
-              addressInfo <- (css "h3 figcaption a" >>> (deep getText)) -< node
-              sellerInfo <- (css "#inlineEmail h2, h2#partnername" >>> (deep getText)) -< node
+              imageUrls <- listA (css "#thumbnails .thumbinnerwrap img"
+                                  >>> getAttrValue "src") -< node
+              addressInfo <- (css "h3 figcaption a"
+                              >>> (deep getText)) -< node
+
+              sellerInfo <- (css ".object #inlineEmail h2" >>> (deep getText))
+                            `orElse`
+                            (css "h2#partnername" >>> (deep getText)) -< node
               returnA -< item {
                 itemImages = map (parseImage now) imageUrls,
                 itemAddress = addressInfo,
