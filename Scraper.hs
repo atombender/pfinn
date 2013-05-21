@@ -30,7 +30,7 @@ main =
             Left x -> putStrLn x
             Right result -> do
               saved <- liftIO $ mapM (saveItem store) (resultItems result)
-              case (or saved) of
+              case (and saved) of
                 True -> scrapeUrlOnPage cache store url (pageNumber + 1)
                 False -> return ()
       | otherwise = return ()
