@@ -2,12 +2,13 @@
 
 module Scraping where
 
+import Control.Monad.IO.Class
 import Network.HTTP
 import Network.URI
 import System.IO
 import System.Locale
 import Data.Maybe
-import Data.List (isInfixOf)
+import Data.List (isInfixOf, nubBy)
 import Data.Time
 import Data.Time.Clock (getCurrentTime)
 import Text.XML.HXT.Core
@@ -40,7 +41,9 @@ scrapeResultPage uri body =
   do
     let doc = readString [withParseHTML yes, withWarnings no] body
     now <- getCurrentTime
-    returnA $ runX $ (doc >>> css "div.fright.objectinfo") >>> (parseResultDiv uri now)
+    items <- liftIO $ runX $ (doc >>> css "div.fright.objectinfo")
+                             >>> (parseResultDiv uri now)
+    return $ nubBy (\a b -> itemFinnKode a == itemFinnKode b) items
   where
     parseResultDiv :: ArrowXml a => URI -> UTCTime -> a XmlTree FinnItem
     parseResultDiv baseUrl time =
