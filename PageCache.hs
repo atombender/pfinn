@@ -51,26 +51,50 @@ closePageCache cache =
      commit db
      disconnect db
 
-fetchUrlWithCaching :: PageCache -> URI -> IO (Either String CachedPage)
-fetchUrlWithCaching cache uri =
+fetchUrlWithCaching :: PageCache -> URI -> Maybe Integer -> IO (Either String CachedPage)
+fetchUrlWithCaching cache uri maxAge =
   do
-    cached <- getCachedPage cache url
-    case cached of
+    -- TODO: Use If-Modified-Since to refresh
+    mCached <- getCachedPage cache url
+    case mCached of
       Nothing -> do
-        -- TODO: Use If-Modified-Since to refresh
-        body <- fetchUrl uri
-        case body of
-          Left x -> return $ Left ("Error connecting: " ++ show x)
-          Right fetched -> do
-            page <- putCachedPage cache cachedPage
-            return $ Right page
-            where
-              cachedPage = CachedPage {cachedPageUrl = url,
-                                   cachedPageBody = fetchedPageBody fetched,
-                                   cachedPageLastModifiedAt = fetchedPageLastModifiedAt fetched}
-      Just c -> return $ Right c
+        putStrLn ("Cache miss " ++ url)
+        fetchUrlAndStoreInCache cache uri
+      Just cached -> do
+        expired <- isExpired cached maxAge
+        case expired of
+          True -> do
+            putStrLn $ "Cache miss (expired) " ++ url
+            fetchUrlAndStoreInCache cache uri
+          False -> do
+            putStrLn $ "Cache hit " ++ url
+            return $ Right cached
   where
     url = show uri
+
+    isExpired :: CachedPage -> Maybe Integer -> IO Bool
+    isExpired cachedPage Nothing = do return False
+    isExpired cachedPage (Just seconds) = do
+      now <- getCurrentTime
+      case maxAge of
+        Nothing -> return False
+        Just seconds -> do
+          let modifiedAt = fromMaybe now (cachedPageLastModifiedAt cachedPage)
+          let age = toInteger $ fromEnum (diffUTCTime modifiedAt now)
+          return (age >= seconds)
+
+    fetchUrlAndStoreInCache :: PageCache -> URI -> IO (Either String CachedPage)
+    fetchUrlAndStoreInCache cache uri = do
+      body <- fetchUrl uri
+      case body of
+        Left x -> return $ Left ("Error connecting: " ++ show x)
+        Right fetched -> do
+          page <- putCachedPage cache cachedPage
+          return $ Right page
+          where
+            cachedPage = CachedPage {cachedPageUrl = url,
+                                     cachedPageBody = fetchedPageBody fetched,
+                                     cachedPageLastModifiedAt = fetchedPageLastModifiedAt fetched}
 
 fetchUrl :: URI -> IO (Either String FetchedPage)
 fetchUrl url =
@@ -118,7 +142,8 @@ fetchUrl url =
 
     fetchUrlRaw :: URI -> IO (Either String (Response ByteString))
     fetchUrlRaw url =
-      do resp <- simpleHTTP request
+      do putStrLn $ "Fetching " ++ (show url)
+         resp <- simpleHTTP request
          case resp of
            -- TODO: Return real error type
            Left x -> return $ Left ("Error connecting: " ++ show x)
@@ -140,12 +165,12 @@ getCachedPage :: PageCache -> String -> IO (Maybe CachedPage)
 getCachedPage cache url =
   do
     db <- pageCacheConn cache
+    now <- getCurrentTime
     res <- quickQuery' db
            "select body, last_modified_at from cached_pages where url = ? limit 1"
            [toSql url]
     case res of
       [[body, lastModifiedAt]] -> do
-        putStrLn ("Cache hit " ++ url)
         return (Just CachedPage {
           cachedPageUrl = url,
           cachedPageBody = fromSql body,
@@ -160,12 +185,12 @@ putCachedPage :: PageCache -> CachedPage -> IO CachedPage
 putCachedPage cache page =
   do
     db <- pageCacheConn cache
+    _ <- run db "delete from cached_pages where url = ?" [toSql $ cachedPageUrl page]
     _ <- run db "insert into cached_pages (\
                 \url, body, last_modified_at) values (?, ?, ?)"
          [toSql $ cachedPageUrl page,
          toSql $ cachedPageBody page,
          maybeFormatPgTimestamp (cachedPageLastModifiedAt page)]
-    commit db
     return page
 
 parsePgTimestamp :: String -> UTCTime

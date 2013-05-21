@@ -21,7 +21,7 @@ import PageCache
 scrapeResults :: PageCache -> String -> IO (Either String FinnResult)
 scrapeResults cache url =
   do
-    resp <- fetchUrlWithCaching cache uri
+    resp <- fetchUrlWithCaching cache uri (Just 0)
     case resp of
       Left x ->
         return $ Left (show x)
@@ -88,7 +88,7 @@ scrapeResultPage uri body =
 scrapeItem :: PageCache -> FinnItem -> IO FinnItem
 scrapeItem cache item =
   do
-    resp <- fetchUrlWithCaching cache uri
+    resp <- fetchUrlWithCaching cache uri Nothing
     case resp of
       Left x ->
         return item
