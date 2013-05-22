@@ -34,7 +34,7 @@
         var $items = $(data);
         $items.each(function() {
           var $item = $(this);
-          $item.on('mouseout', markRead);
+          $item.on('mouseover', markRead);
         });
         $("#items").append($items);
       }).error(function() {
