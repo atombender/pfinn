@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 import System.Environment
 import System.Exit
 import qualified Text.Show.Pretty as Pr

@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module PageCache where
 
 import Control.Monad (when)
@@ -143,14 +145,11 @@ fetchUrl url =
       | hasCharset ctype = cset
       | otherwise = "utf-8"
       where
-        [[_, cset]] = ctype =~ "charset=([^ ]+)"
-        hasCharset s = s =~ "charset=([^ ]+)" :: Bool
+        [[_, cset]] = ctype =~ ("charset=([^ ]+)" :: String)
+        hasCharset s = s =~ ("charset=([^ ]+)" :: String) :: Bool
 
     decodeFromCharset :: String -> ByteString -> String
-    decodeFromCharset _ bytes = Data.Text.unpack (reencode bytes)
-      -- FIXME: Make work for other than iso-8859-1
-      where
-        reencode = Data.Text.pack . Data.ByteString.Char8.unpack
+    decodeFromCharset _ bytes = Data.Text.unpack $ Data.Text.pack $ Data.ByteString.Char8.unpack bytes
 
     fetchUrlRaw :: URI -> IO (Either String (Response ByteString))
     fetchUrlRaw url =

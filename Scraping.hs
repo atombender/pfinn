@@ -1,4 +1,4 @@
-{-# LANGUAGE Arrows #-}
+{-# LANGUAGE OverloadedStrings, Arrows #-}
 
 module Scraping where
 
@@ -71,7 +71,7 @@ scrapeResultPage uri body =
           show (nonStrictRelativeTo (fromJust $ parseRelativeReference url) baseUrl)
 
     extractFinnKode url = kode
-      where [[_, kode]] = url =~ "finnkode=([^&]+)" :: [[String]]
+      where [[_, kode]] = url =~ ("finnkode=([^&]+)" :: String) :: [[String]]
 
     extractDate text = parsed
       where parsed = (readTime defaultTimeLocale "%d.%m.%Y %H:%M" text) :: UTCTime
@@ -79,8 +79,8 @@ scrapeResultPage uri body =
     extractLocation :: String -> String
     extractLocation text = if splittable then base else text
       where
-        splittable = sanitized =~ ", [0-9]+" :: Bool
-        [[_, base]] = sanitized =~ "^(.*), [0-9]+.*" :: [[String]]
+        splittable = sanitized =~ (", [0-9]+" :: String) :: Bool
+        [[_, base]] = sanitized =~ ("^(.*), [0-9]+.*" :: String) :: [[String]]
 
         -- FIXME: This is too naive
         sanitized = filter (\e -> e >= '\x0020' && e <= '\x007f') text
@@ -139,4 +139,4 @@ scrapeItem cache item =
                     imageNormalSizeUrl = prefix ++ suffix,
                     imageLargeSizeUrl = prefix ++ "_xl" ++ suffix}
           where
-            [[_, prefix, suffix]] = src =~ "^(.*)_thumb(\\..*)" :: [[String]]
+            [[_, prefix, suffix]] = src =~ ("^(.*)_thumb(\\..*)" :: String) :: [[String]]
