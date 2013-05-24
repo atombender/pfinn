@@ -162,15 +162,20 @@ fetchUrl url =
              case rspCode r of
                (2, _, _) ->
                  return $ Right r
-               (3, _, _) ->
+               (3, _, _) -> do
                  case findHeader HdrLocation r of
                    Nothing -> return $ Left (show r)
-                   Just u -> fetchUrlRaw (fromJust $ parseURI u)
+                   Just u -> fetchUrlRaw $ joinUrl url u
                _ -> return $ Left (show r)
-      where request = Request {rqURI = url,
-                               rqMethod = GET,
-                               rqHeaders = [],
-                               rqBody = (empty :: ByteString)}
+      where
+        joinUrl :: URI -> String -> URI
+        joinUrl base other =
+          nonStrictRelativeTo (fromJust $ parseRelativeReference other) base
+
+        request = Request {rqURI = url,
+                           rqMethod = GET,
+                           rqHeaders = [],
+                           rqBody = (empty :: ByteString)}
 
 getCachedPage :: PageCache -> String -> IO (Maybe CachedPage)
 getCachedPage cache url =
