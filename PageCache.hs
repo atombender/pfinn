@@ -17,7 +17,7 @@ import qualified Database.HDBC.PostgreSQL as PostgreSQL (Connection)
 
 data CachedPage = CachedPage {cachedPageUrl :: String,
                               cachedPageBody :: String,
-                              cachedPageLastModifiedAt :: Maybe UTCTime}
+                              cachedPageLastModifiedAt :: UTCTime}
   deriving (Eq, Show, Read)
 
 data PageCache = PageCache {pageCacheConn :: IO PostgreSQL.Connection}
@@ -41,7 +41,7 @@ openPageCache =
              _ <- run db "create table cached_pages ( \
                          \url text primary key, \
                          \body text not null, \
-                         \last_modified_at timestamp)" []
+                         \last_modified_at timestamp with time zone not null)" []
              return ()
          commit db
 
@@ -79,13 +79,25 @@ fetchUrlWithCaching cache uri maxAge =
       case maxAge of
         Nothing -> return False
         Just seconds -> do
-          let modifiedAt = fromMaybe now (cachedPageLastModifiedAt cachedPage)
-          let age = toInteger $ fromEnum (diffUTCTime modifiedAt now)
-          return (age >= seconds)
+          age <- ageOf cachedPage
+          return $ age >= seconds
+      where
+        ageOf page = do
+          now <- getCurrentTime
+          return $ diffUTCTimeInSeconds now (cachedPageLastModifiedAt cachedPage)
+
+        diffUTCTimeInSeconds :: UTCTime -> UTCTime -> Integer
+        diffUTCTimeInSeconds a b =
+          diffToSeconds $ diffUTCTime a b
+
+        diffToSeconds :: NominalDiffTime -> Integer
+        diffToSeconds d =
+          toInteger $ fromEnum (d / 1000000000000)
 
     fetchUrlAndStoreInCache :: PageCache -> URI -> IO (Either String CachedPage)
     fetchUrlAndStoreInCache cache uri = do
       body <- fetchUrl uri
+      now <- getCurrentTime
       case body of
         Left x -> return $ Left ("Error connecting: " ++ show x)
         Right fetched -> do
@@ -94,7 +106,7 @@ fetchUrlWithCaching cache uri maxAge =
           where
             cachedPage = CachedPage {cachedPageUrl = url,
                                      cachedPageBody = fetchedPageBody fetched,
-                                     cachedPageLastModifiedAt = fetchedPageLastModifiedAt fetched}
+                                     cachedPageLastModifiedAt = fromMaybe now (fetchedPageLastModifiedAt fetched)}
 
 fetchUrl :: URI -> IO (Either String FetchedPage)
 fetchUrl url =
@@ -188,17 +200,11 @@ putCachedPage cache page =
                 \url, body, last_modified_at) values (?, ?, ?)"
          [toSql $ cachedPageUrl page,
          toSql $ cachedPageBody page,
-         maybeFormatPgTimestamp (cachedPageLastModifiedAt page)]
+         toSql (formatPgTimestamp $ cachedPageLastModifiedAt page)]
     return page
 
 parsePgTimestamp :: String -> UTCTime
-parsePgTimestamp s = readTime defaultTimeLocale "%s" s :: UTCTime
+parsePgTimestamp s = readTime defaultTimeLocale "%F %T" s :: UTCTime
 
 formatPgTimestamp :: UTCTime -> String
-formatPgTimestamp t = formatTime defaultTimeLocale "%F %T" t
-
-maybeFormatPgTimestamp :: Maybe UTCTime -> SqlValue
-maybeFormatPgTimestamp t =
-  case t of
-    Just t' -> toSql (formatTime defaultTimeLocale "%s" t')
-    Nothing -> SqlNull
+formatPgTimestamp t = formatTime defaultTimeLocale "%F %T UTC" t
