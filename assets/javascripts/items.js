@@ -1,21 +1,27 @@
 (function() {
   var loading = false;
 
-  function markRead() {
-    var $item = $(this);
-    if ($item.data('markedRead') == null) {
-      $item.data('markedRead', true);
-      $.ajax({
-        url: '/read',
-        data: {id: $item.attr('data-id')},
-        type: 'POST'
-      }).success(function(data) {
-        $item.addClass('is_read');
-      }).error(function() {
-      }).complete(function() {
-        loading = false;
-      });
-    }
+  function markRead(id) {
+    var top = $("li[data-id=" + id + "]").offset().top;
+    $("li[data-id]").each(function() {
+      var $item = $(this);
+      if ($item.offset().top <= top) {
+        var anId = parseInt($item.attr('data-id'));
+        if ($item.data('markedRead') == null) {
+          $item.data('markedRead', true);
+          $.ajax({
+            url: '/read',
+            data: {id: anId},
+            type: 'POST'
+          }).success(function(data) {
+            $item.addClass('is_read');
+          }).error(function() {
+          }).complete(function() {
+            loading = false;
+          });
+        }
+      }
+    });
   }
 
   function loadMore() {
@@ -34,7 +40,11 @@
         var $items = $(data);
         $items.each(function() {
           var $item = $(this);
-          $item.on('mouseover', markRead);
+          $item.on('mouseover', function() {
+            var $item = $(this);
+            var id = parseInt($item.attr('data-id'));
+            markRead(id);
+          });
         });
         $("#items").append($items);
       }).error(function() {
