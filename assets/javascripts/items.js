@@ -40,11 +40,27 @@
         var $items = $(data);
         $items.each(function() {
           var $item = $(this);
+          var id = parseInt($item.attr('data-id'));
           $item.on('mouseover', function() {
-            var $item = $(this);
-            var id = parseInt($item.attr('data-id'));
             markRead(id);
           });
+          $item.find('.actions')
+            .append(
+              $('<a>')
+                .attr('href', '#')
+                .on('click', function(event) {
+                  event.preventDefault();
+                  $.ajax({
+                    url: '/ignore',
+                    data: {id: id},
+                    type: 'POST'
+                  }).success(function(data) {
+                    $item.addClass('is_ignored');
+                  }).error(function() {
+                  }).complete(function() {
+                  });
+                })
+                .text('Ignorer'));
         });
         $("#items").append($items);
       }).error(function() {

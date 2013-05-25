@@ -24,6 +24,7 @@ webApp =
     dir "assets" $ handleAssets,
     dir "items" $ handleItems,
     dir "read" $ handleMarkRead,
+    dir "ignore" $ handleIgnore,
     handleIndex]
 
 handleIndex :: ServerPart Response
@@ -56,6 +57,7 @@ handleItems =
               H.a ! href (toValue (imageLargeSizeUrl image)) $ do
                 H.img ! src (toValue (imageNormalSizeUrl image))
               H.span " ") (itemImages item))
+            H.div ! class_ "actions" $ ""
         ) items
   where
     getItemsBefore mBeforeId =
@@ -89,6 +91,22 @@ handleMarkRead =
       do
         store <- openDefaultStore
         markRead store (read id)
+        closeStore store
+        return ()
+
+handleIgnore :: ServerPart Response
+handleIgnore =
+  do
+    id <- lookText "id"
+    liftIO $ doIgnore (show id)
+    ok $ toResponse $ do
+      H.div ""
+  where
+    doIgnore :: String -> IO ()
+    doIgnore id =
+      do
+        store <- openDefaultStore
+        addIgnore store (read id)
         closeStore store
         return ()
 

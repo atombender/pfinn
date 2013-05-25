@@ -30,8 +30,26 @@ ul#items
         max-width: 250px
         max-height: 250px
         margin: 10px 10px 0 0
+    .actions
+      display: table-cell
+      border-left: solid 1px #ddd
+      vertical-align: top
+      padding-left: 15px
+      font-size: 11px
+      width: 100px
+      a
+        color: #666
+        border: solid 1px #ddd
+        background: #eee
+        border-radius: 3px
+        padding: 3px 5px
+        &:hover
+          background: #ddd
+          border: solid 1px #ccc
     &:hover
       background: #f0f0f0
     &.is_read
       .title a:link
         color: #888 !important
+    &.is_ignored
+      opacity: 0.5

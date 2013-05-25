@@ -68,6 +68,14 @@ openStore connectionParams =
                      \large_url text not null, \
                      \normal_url text not null)" []
              return ()
+        when (not ("ignored_sellers" `elem` tables)) $
+          do run db "create table ignored_sellers (\
+                     \created_at timestamp not null default now(), \
+                     \updated_at timestamp not null default now(), \
+                     \seller_name text, \
+                     \address text, \
+                     \location text)" []
+             return ()
         when (not ("read_states" `elem` tables)) $
           do run db "create table read_states (\
                      \finn_kode integer primary key references items (finn_kode), \
@@ -115,6 +123,21 @@ markRead store finnKode =
           toSql $ formatPgTimestamp now]
         return ()
 
+addIgnore :: Store -> FinnKode -> IO ()
+addIgnore store finnKode =
+  do
+    db <- storeConn store
+    mItem <- getItemByFinnKode store finnKode
+    case mItem of
+      Just item -> do
+        run db "insert into ignored_sellers (\
+          \seller_name, address, location) values (?, ?, ?)" [
+          toSql $ itemSellerName item,
+          toSql $ itemAddress item,
+          toSql $ itemLocation item]
+        return ()
+      Nothing -> return ()
+
 findItems :: Store -> FindOptions -> IO [FinnItem]
 findItems store options =
   do
@@ -124,6 +147,7 @@ findItems store options =
         res <- quickQuery' db
                "select finn_kode from items where finn_kode < ? \
                \and finn_kode not in (select finn_kode from read_states) \
+               \and (seller_name, address, location) not in (select seller_name, address, location from ignored_sellers) \
                \order by finn_kode desc \
                \limit ? offset ?" (map toSql [
                id,
@@ -135,6 +159,7 @@ findItems store options =
         res <- quickQuery' db
                "select finn_kode from items \
                \where finn_kode not in (select finn_kode from read_states) \
+               \and (seller_name, address, location) not in (select seller_name, address, location from ignored_sellers) \
                \order by finn_kode desc \
                \limit ? offset ?" (map toSql [
                findOptionsLimit options,
