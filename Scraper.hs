@@ -25,7 +25,7 @@ main =
 
     scrapeUrlOnPage :: PageCache -> Store -> String -> Integer -> IO ()
     scrapeUrlOnPage cache store url pageNumber
-      | pageNumber < 10 = do
+      | pageNumber < 30 = do
           putStrLn ("Scraping " ++ urlWithPageNumber)
           feed <- scrapeResults cache urlWithPageNumber
           case feed of
