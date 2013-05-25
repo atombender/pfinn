@@ -30,86 +30,84 @@ scrapeResults cache url =
         do
           items <- scrapeResultPage uri (cachedPageBody page)
           items' <- mapM (scrapeItem cache) items
-          let result = FinnResult {resultUrl = url, resultItems = items'}
+          let result = FinnResult {resultUrl = url, resultItems = catMaybes items'}
           return (Right result)
   where
     uri = fromJust $ parseURI url
 
--- Scrape items from a result page.
-scrapeResultPage :: URI -> String -> IO [FinnItem]
-scrapeResultPage uri body =
-  do
-    let doc = readString [withParseHTML yes, withWarnings no] body
-    now <- getCurrentTime
-    items <- liftIO $ runX $ (doc >>> css "div.fright.objectinfo")
-                             >>> (parseResultDiv uri now)
-    return $ nubBy (\a b -> itemFinnKode a == itemFinnKode b) items
-  where
-    parseResultDiv :: ArrowXml a => URI -> UTCTime -> a XmlTree FinnItem
-    parseResultDiv baseUrl time =
-      proc node -> do
-        anchor <- css "div h2 a" >>> getAttrValue "href" -< node
-        anchorText <- css "div h2 a" >>> (deep getText) -< node
-        pubInfo <- css "dd[data-automation-id='dateinfo']" >>> (deep getText) -< node
-        locationInfo <- css "dd[data-automation-id='location']" >>> (deep getText) -< node
-        priceInfo <- css "div.strong.sharp" >>> (deep getText) -< node
-        returnA -< FinnItem {
-          itemFinnKode = extractFinnKode anchor,
-          itemTitle = anchorText,
-          itemUrl = qualifyUrl anchor,
-          itemPublishedAt = extractDate pubInfo,
-          itemCreatedAt = time,
-          itemUpdatedAt = time,
-          itemLocation = extractLocation locationInfo,
-          itemPrice = extractPrice priceInfo,
-          itemAddress = "",
-          itemSellerName = "",
-          itemImages = []
-        }
+    -- Scrape items from a result page.
+    scrapeResultPage :: URI -> String -> IO [FinnItem]
+    scrapeResultPage uri body =
+      do
+        let doc = readString [withParseHTML yes, withWarnings no] body
+        now <- getCurrentTime
+        items <- liftIO $ runX $ (doc >>> css "div.fright.objectinfo")
+                                 >>> (parseResultDiv uri now)
+        return $ nubBy (\a b -> itemFinnKode a == itemFinnKode b) items
       where
-        qualifyUrl url =
-          show (nonStrictRelativeTo (fromJust $ parseRelativeReference url) baseUrl)
+        parseResultDiv :: ArrowXml a => URI -> UTCTime -> a XmlTree FinnItem
+        parseResultDiv baseUrl time =
+          proc node -> do
+            anchor <- css "div h2 a" >>> getAttrValue "href" -< node
+            anchorText <- css "div h2 a" >>> (deep getText) -< node
+            pubInfo <- css "dd[data-automation-id='dateinfo']" >>> (deep getText) -< node
+            locationInfo <- css "dd[data-automation-id='location']" >>> (deep getText) -< node
+            priceInfo <- css "div.strong.sharp" >>> (deep getText) -< node
+            returnA -< FinnItem {
+              itemFinnKode = extractFinnKode anchor,
+              itemTitle = anchorText,
+              itemUrl = qualifyUrl anchor,
+              itemPublishedAt = extractDate pubInfo,
+              itemCreatedAt = time,
+              itemUpdatedAt = time,
+              itemLocation = extractLocation locationInfo,
+              itemPrice = extractPrice priceInfo,
+              itemAddress = "",
+              itemSellerName = "",
+              itemImages = []
+            }
+          where
+            qualifyUrl url =
+              show (nonStrictRelativeTo (fromJust $ parseRelativeReference url) baseUrl)
 
-    extractFinnKode url = kode
-      where [[_, kode]] = url =~ ("finnkode=([^&]+)" :: String) :: [[String]]
+        extractFinnKode url = kode
+          where [[_, kode]] = url =~ ("finnkode=([^&]+)" :: String) :: [[String]]
 
-    extractDate text = parsed
-      where parsed = (readTime defaultTimeLocale "%d.%m.%Y %H:%M" text) :: UTCTime
+        extractDate text = parsed
+          where parsed = (readTime defaultTimeLocale "%d.%m.%Y %H:%M" text) :: UTCTime
 
-    extractLocation :: String -> String
-    extractLocation text = if splittable then base else text
-      where
-        splittable = sanitized =~ (", [0-9]+" :: String) :: Bool
-        [[_, base]] = sanitized =~ ("^(.*), [0-9]+.*" :: String) :: [[String]]
+        extractLocation :: String -> String
+        extractLocation text = if splittable then base else text
+          where
+            splittable = sanitized =~ (", [0-9]+" :: String) :: Bool
+            [[_, base]] = sanitized =~ ("^(.*), [0-9]+.*" :: String) :: [[String]]
 
-        -- FIXME: This is too naive
-        sanitized = filter (\e -> e >= '\x0020' && e <= '\x007f') text
+            -- FIXME: This is too naive
+            sanitized = filter (\e -> e >= '\x0020' && e <= '\x007f') text
 
-    extractPrice text = filter (\e -> e >= '0' && e <= '9') text
+        extractPrice text = filter (\e -> e >= '0' && e <= '9') text
 
 -- Scrape the item's main page, augmenting the item with more data.
-scrapeItem :: PageCache -> FinnItem -> IO FinnItem
+scrapeItem :: PageCache -> FinnItem -> IO (Maybe FinnItem)
 scrapeItem cache item =
   do
     resp <- fetchUrlWithCaching cache uri Nothing
     case resp of
-      Left x ->
-        return item
-      Right page ->
-        do
-          item' <- parseItemPage item uri (cachedPageBody page)
-          return item'
+      Left x -> return $ Just item
+      Right page -> parseItemPage item uri (cachedPageBody page)
   where
     uri = fromJust $ parseURI ("http://www.finn.no/finn/torget/tilsalgs/annonse?finnkode=" ++ (itemFinnKode item))
 
-    parseItemPage :: FinnItem -> URI -> String -> IO FinnItem
+    parseItemPage :: FinnItem -> URI -> String -> IO (Maybe FinnItem)
     parseItemPage item uri body
-      | isDeleted body = return item
+      | isDeleted body = return $ Just item
       | otherwise = do
           let doc = readString [withParseHTML yes, withWarnings no] body
           now <- getCurrentTime
-          [item'] <- runX $ doc >>> (parsePage now item)
-          return item'
+          items <- runX $ doc >>> (parsePage now item)
+          case items of
+            [item'] -> return $ Just item'
+            otherwise -> return Nothing
       where
         isDeleted body = "Annonsen er slettet" `isInfixOf` body
 
