@@ -2,7 +2,6 @@
 
 import System.Environment
 import System.Exit
-import qualified Text.Show.Pretty as Pr
 import Control.Monad.IO.Class
 
 import Scraping
