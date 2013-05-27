@@ -1,5 +1,6 @@
 (function() {
   var loading = false;
+  var offset = 0;
 
   function markRead(id) {
     var top = $("li[data-id=" + id + "]").offset().top;
@@ -27,18 +28,14 @@
   function loadMore() {
     if (!loading) {
       loading = true;
-      var params = {};
-      var maxId = $("li[data-id]").last().attr('data-id');
-      if (maxId) {
-        params['beforeId'] = maxId;
-      }
       $.ajax({
         url: '/items',
-        data: params,
+        data: {offset: offset},
         type: 'GET'
       }).success(function(data) {
         var $items = $(data);
         $items.each(function() {
+          offset++;
           var $item = $(this);
           var id = parseInt($item.attr('data-id'));
           $item.on('mouseover', function() {

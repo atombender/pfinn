@@ -36,8 +36,8 @@ handleIndex =
 handleItems :: ServerPart Response
 handleItems =
   do
-    mBeforeId <- optional $ lookText "beforeId"
-    items <- liftIO $ getItemsBefore mBeforeId
+    mOffset <- optional $ lookText "offset"
+    items <- liftIO $ getItemsBefore mOffset
     ok $ toResponse $ do
       mapM_ (\item ->
         do
@@ -60,7 +60,7 @@ handleItems =
             H.div ! class_ "actions" $ ""
         ) items
   where
-    getItemsBefore mBeforeId =
+    getItemsBefore mOffset =
       do
         store <- openDefaultStore
         items <- findItems store options
@@ -68,14 +68,13 @@ handleItems =
         return items
       where
         options =
-          case mBeforeId of
+          case mOffset of
             Nothing -> baseOptions
-            Just id -> baseOptions {findOptionsBeforeId = Just $ read (unpack id)}
+            Just i -> baseOptions {findOptionsOffset = read $ unpack i}
           where
             baseOptions = FindOptions {
               findOptionsOffset = 0,
-              findOptionsLimit = 20,
-              findOptionsBeforeId = Nothing
+              findOptionsLimit = 20
             }
 
 handleMarkRead :: ServerPart Response

@@ -26,8 +26,7 @@ import FinnTypes
 data Store = Store {storeConn :: IO PostgreSQL.Connection}
 
 data FindOptions = FindOptions {findOptionsOffset :: Integer,
-                                findOptionsLimit :: Integer,
-                                findOptionsBeforeId :: Maybe Integer}
+                                findOptionsLimit :: Integer}
 
 openDefaultStore :: IO Store
 openDefaultStore =
@@ -59,6 +58,7 @@ openStore connectionParams =
                      \address text, \
                      \seller_name text, \
                      \price text)" []
+             run db "create index index_items_on_text_vector on items using gin ('simple', to_tsvector(title))" []
              return ()
         when (not ("images" `elem` tables)) $
           do run db "create table images (\
@@ -75,6 +75,12 @@ openStore connectionParams =
                      \seller_name text, \
                      \address text, \
                      \location text)" []
+             return ()
+        when (not ("priority_keywords" `elem` tables)) $
+          do run db "create table priority_keywords (\
+                     \created_at timestamp not null default now(), \
+                     \updated_at timestamp not null default now(), \
+                     \keyword text)" []
              return ()
         when (not ("read_states" `elem` tables)) $
           do run db "create table read_states (\
@@ -142,30 +148,18 @@ findItems :: Store -> FindOptions -> IO [FinnItem]
 findItems store options =
   do
     db <- storeConn store
-    case (findOptionsBeforeId options) of
-      Just id -> do
-        res <- quickQuery' db
-               "select finn_kode from items where finn_kode < ? \
-               \and finn_kode not in (select finn_kode from read_states) \
-               \and (seller_name, address, location) not in (select seller_name, address, location from ignored_sellers) \
-               \order by finn_kode desc \
-               \limit ? offset ?" (map toSql [
-               id,
-               findOptionsLimit options,
-               findOptionsOffset options])
-        items <- mapM (getItemByFinnKode store) (map (\[e] -> fromSql e) res)
-        return $ (catMaybes items)
-      Nothing -> do
-        res <- quickQuery' db
-               "select finn_kode from items \
-               \where finn_kode not in (select finn_kode from read_states) \
-               \and (seller_name, address, location) not in (select seller_name, address, location from ignored_sellers) \
-               \order by finn_kode desc \
-               \limit ? offset ?" (map toSql [
-               findOptionsLimit options,
-               findOptionsOffset options])
-        items <- mapM (getItemByFinnKode store) (map (\[e] -> fromSql e) res)
-        return $ (catMaybes items)
+    res <- quickQuery' db
+           ("select finn_kode from items where \
+           \finn_kode not in (select finn_kode from read_states) \
+           \and (seller_name, address, location) not in (\
+           \  select seller_name, address, location from ignored_sellers) \
+           \order by (select count(*) from priority_keywords \
+           \  where to_tsvector(title) @@ to_tsquery(keyword)) desc, published_at desc \
+           \limit ? offset ?") [
+           toSql $ findOptionsLimit options,
+           toSql $ findOptionsOffset options]
+    items <- mapM (getItemByFinnKode store) (map (\[e] -> fromSql e) res)
+    return $ (catMaybes items)
 
 getItemByFinnKode :: Store -> FinnKode -> IO (Maybe FinnItem)
 getItemByFinnKode store finnKode =
