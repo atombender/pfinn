@@ -8,18 +8,20 @@
       var $item = $(this);
       if ($item.offset().top <= top) {
         var anId = parseInt($item.attr('data-id'));
-        if ($item.data('markedRead') == null) {
-          $item.data('markedRead', true);
-          $.ajax({
-            url: '/read',
-            data: {id: anId},
-            type: 'POST'
-          }).success(function(data) {
-            $item.addClass('is_read');
-          }).error(function() {
-          }).complete(function() {
-            loading = false;
-          });
+        if (window.location.toString().match(/reading/)) {
+          if ($item.data('markedRead') == null) {
+            $item.data('markedRead', true);
+            $.ajax({
+              url: '/read',
+              data: {id: anId},
+              type: 'POST'
+            }).success(function(data) {
+              $item.addClass('is_read');
+            }).error(function() {
+            }).complete(function() {
+              loading = false;
+            });
+          }
         }
       }
     });
