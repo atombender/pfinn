@@ -13,7 +13,8 @@ SOURCES=$(wildcard *.hs)
 OBJECTS=$(patsubst %.hs,%.o,$(SOURCES))
 
 GHC_FLAGS=-Werror
-#GHC_FLAGS=-Werror -Wall
+
+CABAL_OPTS=
 
 WebUI: $(SOURCES) $(STYLESHEETS)
 	ghc $(GHC_FLAGS) WebUI.hs
